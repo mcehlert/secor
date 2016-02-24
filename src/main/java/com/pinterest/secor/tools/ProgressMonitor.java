@@ -15,7 +15,11 @@
  * limitations under the License.
  */
 package com.pinterest.secor.tools;
-
+import com.amazonaws.services.cloudwatch.AmazonCloudWatch;
+import com.amazonaws.services.cloudwatch.AmazonCloudWatchClient;
+import com.amazonaws.services.cloudwatch.model.Dimension;
+import com.amazonaws.services.cloudwatch.model.MetricDatum;
+import com.amazonaws.services.cloudwatch.model.PutMetricDataRequest;
 import com.google.common.base.Joiner;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
@@ -77,6 +81,7 @@ public class ProgressMonitor {
         if (Strings.isNullOrEmpty(mPrefix)) {
             mPrefix = "secor";
         }
+
     }
 
     private void makeRequest(String body) throws IOException {
@@ -141,6 +146,58 @@ public class ProgressMonitor {
         // if there is a valid statsD port configured export to statsD
         if (mConfig.getStatsDHostPort() != null && !mConfig.getStatsDHostPort().isEmpty()) {
             exportToStatsD(stats);
+        }
+
+        if (mConfig.getAwsCloudWatchRegion() != null && !mConfig.getAwsCloudWatchRegion().isEmpty()) {
+            exportToAWSCloudWatch(stats);
+        }
+
+    }
+
+    private void exportToAWSCloudWatch(List<Stat> stats) {
+        String awsRegion = mConfig.getAwsCloudWatchRegion();
+        String awsCloudWatchNamespace = mConfig.getAwsCloudWatchNamespace();
+        AmazonCloudWatchClient awsCloudWatch = new AmazonCloudWatchClient();
+        awsCloudWatch.setEndpoint("https://monitoring."+awsRegion+".amazonaws.com");
+
+        for (Stat stat : stats) {
+            Map<String, String> tags = (Map<String, String>) stat.get(Stat.STAT_KEYS.TAGS.getName());
+            List<Dimension> dimensions = Lists.newArrayList();
+
+            Dimension topicDim = new Dimension()
+                                    .withName(Stat.STAT_KEYS.TOPIC.getName())
+                                    .withValue((String)tags.get(Stat.STAT_KEYS.TOPIC.getName()));
+            Dimension partitionDim = new Dimension()
+                                        .withName(Stat.STAT_KEYS.PARTITION.getName())
+                                        .withValue((String)tags.get(Stat.STAT_KEYS.PARTITION.getName()));
+            
+            dimensions.add(topicDim);
+            dimensions.add(partitionDim);
+
+            MetricDatum metricDatum = new MetricDatum()
+                                        .withMetricName((String)stat.get(Stat.STAT_KEYS.METRIC.getName()))
+                                        .withValue(Double.parseDouble((String)stat.get(Stat.STAT_KEYS.VALUE.getName())));
+
+            PutMetricDataRequest putMetricDataRequest = new PutMetricDataRequest()
+                                                            .withNamespace(awsCloudWatchNamespace)
+                                                            .withMetricData(metricDatum);
+            
+            /*MetricDatum metricDatumWithDimensions = new MetricDatum()
+                                        .withDimensions(dimensions)
+                                        .withMetricName((String)stat.get(Stat.STAT_KEYS.METRIC.getName()))
+                                        .withValue(Double.parseDouble((String)stat.get(Stat.STAT_KEYS.VALUE.getName())));
+
+            PutMetricDataRequest putMetricDataRequestWithDimensions = new PutMetricDataRequest()
+                                                            .withNamespace(awsCloudWatchNamespace)
+                                                            .withMetricData(metricDatumWithDimensions);
+            */
+
+            try {
+                awsCloudWatch.putMetricData(putMetricDataRequest);
+                //awsCloudWatch.putMetricData(putMetricDataRequestWithDimensions);
+            } catch (Exception e) {
+                LOG.warn("Putting Metrics to AWS CloudWatch failed: {}", e);
+            }
         }
     }
 

@@ -266,6 +266,14 @@ public class SecorConfig {
         return getString("aws.sse.customer.key");
     }
 
+    public String getAwsCloudWatchRegion() {
+        return getString("aws.cloudwatch.region");
+    }
+
+    public String getAwsCloudWatchNamespace() {
+        return getString("aws.cloudwatch.namespace");
+    }
+
     public String getSwiftTenant() {
         return getString("swift.tenant");
     }
